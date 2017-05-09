@@ -43,6 +43,7 @@ for i in range(episode_count):
         curr_state = state_q.get() # blocking read
 
         print "got state"
+        print curr_state['position']
 
         # compute stuff based on state
 

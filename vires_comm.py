@@ -11,14 +11,18 @@ from threading import Thread
 
 
 DEFAULT_BUFFER = 204800
-RDB_PORT = 48195
-SCP_PORT = 48179
+RDB_PORT = 35712
+SCP_PORT = 40108
 
 # name of agent in Vires scenario
 AV_NAME = "AV"
 
 # lazy way to communicate between threads
 collision_flag = 0
+dest_pos = None
+
+# we can query for scenario details
+SCENE_FILE = 'test.xml'
 
 
 # creates a new sensor via SCP
@@ -63,35 +67,70 @@ def scp_state():
     SCP_sock.connect(('127.0.0.1', SCP_PORT))
     scp_buf = bytearray(DEFAULT_BUFFER)
 
-    def process_scp_msg():
-        scp_hdr = SCP_MSG_HDR_t.from_buffer(scp_buf[:sizeof(SCP_MSG_HDR_t)])
+    def scp_query(query_txt):
+        scp_msg = SCP_MSG_HDR_t()
+        scp_msg.magicNo = SCP_MAGIC_NO
+        scp_msg.version = 1
+        scp_msg.sender = "python_scp"
+        scp_msg.receiver = "any"
+        scp_msg.dataSize = len(query_txt)
+        SCP_sock.send(bytearray(scp_msg) + bytearray(query_txt))
 
-        if scp_hdr.magicNo != SCP_MAGIC_NO:
-            return
+        # now wait for reply
+        # assume first reply we get is ours
+        # better way could be to check reply tag against query tag
+        while True:
+            scp_msg_tree = get_scp_msg()
 
-        data_idx = sizeof(SCP_MSG_HDR_t)
-        data = str(scp_buf[data_idx:data_idx + scp_hdr.dataSize-1])
+            if scp_msg_tree.tag == 'Reply':
+                return scp_msg_tree
 
-        try:
-            msg_root = ET.fromstring(data)
-        except:
-            return
 
-        if msg_root.tag == ''
-        if msg_root.find('Collision') is not None:
-            if msg_root.tag == 'Player' and msg_root.attrib['name'] == 'AV':
+    # receive from socket and convert to elementTree
+    def get_scp_msg():
+
+        # loop just in case we don't get a proper message
+        while True:
+            n_bytes = SCP_sock.recv_into(scp_buf) # blocking
+            scp_hdr = SCP_MSG_HDR_t.from_buffer(scp_buf[:sizeof(SCP_MSG_HDR_t)])
+
+            if scp_hdr.magicNo != SCP_MAGIC_NO:
+                continue
+
+            data_idx = sizeof(SCP_MSG_HDR_t)
+            data = str(scp_buf[data_idx:data_idx + scp_hdr.dataSize-1])
+
+            try:
+                msg_root = ET.fromstring(data)
+                return msg_root
+            except:
+                continue
+
+
+    # get goal location by querying scenario file
+    scenario_query = "<Query entity=\"traffic\"><GetScenario filename=\"" + SCENE_FILE + "\"/></Query>"
+    scenario_reply = scp_query(scenario_query)
+    print scenario_reply.tag
+
+    # get goal location on path for our AV
+    for player in scenario_reply.iter('Player'):
+        if player.find('Description').attrib['Name'] == AV_NAME:
+
+            global dest_pos
+            dest_pos = player.find('./Init/PathRef').attrib['TargetS']
+
+    while True:
+
+        scp_msg_tree = get_scp_msg()
+
+        # collision check
+        if scp_msg_tree.find('Collision') is not None:
+            if scp_msg_tree.tag == 'Player' and scp_msg_tree.attrib['name'] == 'AV':
                 print "COLLISION!!"
 
                 # will remain flagged until the action thread resets it
                 global collision_flag
                 collision_flag = 1
-
-    #global collision_flag
-    while True:
-
-        n_bytes = SCP_sock.recv_into(scp_buf)
-        process_scp_msg()
-
 
         time.sleep(0)
 
@@ -117,7 +156,7 @@ def vires_state(state_q):
 
     def process_rdb_frame():
 
-        # extract sensor obj info. and vehicle position
+        # extract sensor obj info, vehicle position, & position in path
 
         rdb_hdr = RDB_MSG_HDR_t.from_buffer(rdb_buf[:sizeof(RDB_MSG_HDR_t)])
 
