@@ -1,7 +1,3 @@
-# import socket
-# import time
-# import numpy as np
-# import struct, collections
 
 from ctypes import *
 
@@ -92,6 +88,25 @@ class RDB_SENSOR_OBJECT_t(Structure):
         ('occlusion', c_byte),
         ('spare0', c_ubyte*3),
         ('spare', c_int*3)]
+
+class RDB_ROAD_POS_t(Structure):
+    _pack_ = 4
+    _fields_ = [
+        ('playerId', c_uint),
+        ('roadId', c_ushort),
+        ('laneId', c_byte),
+        ('flags', c_ubyte),
+        ('roadS', c_float),
+        ('roadT', c_float),
+        ('laneOffset', c_float),
+        ('hdgRel', c_float),
+        ('pitchRel', c_float),
+        ('rollRel', c_float),
+        ('roadType', c_ubyte),
+        ('spare1', c_ubyte),
+        ('spare2', c_ushort),
+        ('pathS', c_float)]
+
 
 SCP_MAGIC_NO = 40108
 
